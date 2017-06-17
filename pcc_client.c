@@ -9,19 +9,30 @@
 #include <errno.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stdlib.h>
 
-#define fileName "/dev/urandom"
+#define FILE_NAME "/dev/urandom"
 #define BUFFER_SIZE 1024
+#define PORT_num 2233
+
+int openSocket();
+int openFile();
+int sendFileToSockect(int sockfd, int filefd, off_t size);
+int printResult(int sockfd);
 
 int main(int argc, char *argv[])
 {
-  if(argc != 1)
+  printf("hi\n");
+  if(argc != 2)
   {
-    printf(" \n");
+    printf("Wrong number of arguments %d \n", argc);
     return -1;
   }
 
-  int numberOfChars = atoi(argc);
+  int numberOfChars = atoi(argv[1]);
+  printf("num - %d\n", numberOfChars);
   if(numberOfChars <= 0)
   {
     printf("parameter is not a valid number\n");
@@ -31,18 +42,18 @@ int main(int argc, char *argv[])
   int sockfd = openSocket();
   if(sockfd == -1)
   {
-    pritnf("unable to open a socket\n");
+    printf("unable to open a socket\n");
     return -1;
   }
 
-  int filefd = openFile(fileName);
+  int filefd = openFile();
   if(filefd == -1)
   {
     printf("unable to open the file\n");
     close(sockfd);
     return -1;
   }
-
+  printf("print!\n");
   if(sendFileToSockect(sockfd,filefd,numberOfChars) == -1)
   {
     close(sockfd);
@@ -50,7 +61,7 @@ int main(int argc, char *argv[])
     return -1;
   }
 
-  printResult();
+  printResult(sockfd);
 
   close(sockfd);
   close(filefd);
@@ -68,7 +79,7 @@ int openSocket()
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
   serv_addr.sin_family = AF_INET;
-  serv_addr.sin_port = htons(2233); // Note: htons for endiannes
+  serv_addr.sin_port = htons(PORT_num); // Note: htons for endiannes
   serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // hardcoded... but why not. lets doing it hard 
 
   if( connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0)
@@ -81,9 +92,9 @@ int openSocket()
 
 }
 
-int openFile(char* fileName)
+int openFile()
 {
-  int file = open(fileName, O_RDONLY);
+  int file = open(FILE_NAME, O_RDONLY);
   if(file == -1)
   {
     printf("unable to open the file - %s\n", strerror(errno));
@@ -112,19 +123,31 @@ int sendFileToSockect(int sockfd, int filefd, off_t size)
       printf("Error reading from input file: %s\n", strerror(errno));
       return -1;
     }
+    printf("data - ");
+    for(int i=0;i<len;i++)
+      printf("%c",buf[i]);
+
+    printf("\n");
 
     size -= len;
+    char *bufPointer = buf;
     //write to socket
     while( len>0 )
     {
-      ssize_t bytes_written = write(sockfd, recv_buff, sizeof(recv_buff) - 1);
+      ssize_t bytes_written = write(sockfd, bufPointer, len);
       if( bytes_written <= 0 )
       {
         printf("Error reading from input file: %s\n", strerror(errno));
         return -1;
       }
       len -= bytes_written;
+      bufPointer += bytes_written;
     }
   }
+  return 0;
+}
+
+int printResult(int sockfd)
+{
   return 0;
 }

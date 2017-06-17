@@ -10,7 +10,8 @@
 #include <time.h>
 #include <assert.h>
 
-// MINIMAL ERROR HANDLING FOR EASE OF READING
+#define BUFFER_SIZE 1024
+#define PORT_num 2233
 
 int main(int argc, char *argv[])
 {
@@ -25,21 +26,17 @@ int main(int argc, char *argv[])
   struct sockaddr_in my_addr;
   struct sockaddr_in peer_addr;
 
-  char data_buff[1025];
-  time_t ticks;
+  char data_buff[BUFFER_SIZE];
 
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
   memset( &serv_addr, '0', sizeof(serv_addr));
   memset( data_buff, '0', sizeof(data_buff));
 
   serv_addr.sin_family = AF_INET;
-  // INADDR_ANY = any local machine address
-  serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  serv_addr.sin_port = htons(10000);
+  serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);  // INADDR_ANY = any local machine address
+  serv_addr.sin_port = htons(PORT_num);
 
-  if( 0 != bind( listenfd,
-                 (struct sockaddr*) &serv_addr,
-                 sizeof(serv_addr)))
+  if( 0 != bind( listenfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)))
   {
     printf("\n Error : Bind Failed. %s \n", strerror(errno));
     return 1;
@@ -69,25 +66,10 @@ int main(int argc, char *argv[])
       return 1;
     }
 
-    getsockname(connfd, (struct sockaddr*) &my_addr,   &addrsize);
-    getpeername(connfd, (struct sockaddr*) &peer_addr, &addrsize);
-    printf("Server: Client connected.\n"
-           "\t\tClient IP: %s Client Port: %d\n"
-           "\t\tServer IP: %s Server Port: %d\n",
-           inet_ntoa( peer_addr.sin_addr ),
-           ntohs(     peer_addr.sin_port ),
-           inet_ntoa( my_addr.sin_addr   ),
-           ntohs(     my_addr.sin_port   ) );
 
-    // write time
-    ticks = time(NULL);
-    snprintf( data_buff, sizeof(data_buff),
-              "%.24s\r\n", ctime(&ticks));
+   
 
-    totalsent = 0;
-    int notwritten = strlen(data_buff);
-
-    // keep looping until nothing left to write
+   
     while( notwritten > 0 )
     {
       // notwritten = how much we have left to write
