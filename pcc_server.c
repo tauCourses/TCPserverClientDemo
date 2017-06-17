@@ -18,7 +18,7 @@
 
 #define BUFFER_SIZE 1024
 #define PORT_num 2233
-#define NUM_OF_PRINTABLE_CHARS 94
+#define NUM_OF_PRINTABLE_CHARS 95
 #define NUM_OF_THREADS 10
 
 typedef struct {
@@ -83,6 +83,7 @@ int main(int argc, char *argv[])
   pthread_mutex_destroy(&statLock);
   
   printStat(globalStat);
+  pthread_exit(NULL);
 }
 
 int setSignalHandler()
@@ -185,16 +186,15 @@ void* clientHandler(void *connfd_ptr)
   while(charToRead > 0)
   {
     int len = charToRead<BUFFER_SIZE? charToRead:BUFFER_SIZE; 
-    printf("len - %d",len);
-    if(processData(connfd,len, &localStat) == -1)
+     if(processData(connfd,len, &localStat) == -1)
     {
       close(connfd);
       return 0;
     }
     charToRead -= len;
   }
-  printStat(localStat);
-  if(writeAll(connfd, &localStat.printable, sizeof(unsigned long)) == -1)
+  
+   if(writeAll(connfd, &localStat.printable, sizeof(unsigned long)) == -1)
   {
     close(connfd);
     return 0;
@@ -212,20 +212,16 @@ int processData(int connfd, int size, statistics *stat)
   char buf[BUFFER_SIZE];
   if(readAll(connfd, buf, size) == -1)
       return -1;
-
-  printf("  size  - %d, stat - %lu\n",size, stat->counted);
-   
+  
   for(int i=0;i<size;i++)
   {
     stat->counted++;
     if(buf[i]>=32 && buf[i]<=126) //check char is printable
     {
       stat->printable++;
-    //  stat->printableArray[buf[i]-32]++;
+      stat->printableArray[buf[i]-32]++;
     }
   }
-
-  printf("  size  - %d, stat - %lu\n",size, stat->counted);
 
   return 0;
 }
@@ -241,7 +237,6 @@ int readAll(int file, void * buffer, size_t size)
     len = read(file, location, size); 
     if(len == -1)
     {
-      printf("len - %zu\n", len);
       printf("Error reading from file: %s\n", strerror(errno));
       return -1;  
     }
