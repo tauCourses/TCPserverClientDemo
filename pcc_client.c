@@ -21,10 +21,11 @@ int openSocket();
 int openFile();
 int sendFileToSockect(int sockfd, int filefd, off_t size);
 int printResult(int sockfd);
+int readAll(int file, void * buffer, size_t size);
+int writeAll(int file, void * buffer, size_t size);
 
 int main(int argc, char *argv[])
 {
-  printf("hi\n");
   if(argc != 2)
   {
     printf("Wrong number of arguments %d \n", argc);
@@ -32,7 +33,6 @@ int main(int argc, char *argv[])
   }
 
   int numberOfChars = atoi(argv[1]);
-  printf("num - %d\n", numberOfChars);
   if(numberOfChars <= 0)
   {
     printf("parameter is not a valid number\n");
@@ -41,10 +41,8 @@ int main(int argc, char *argv[])
 
   int sockfd = openSocket();
   if(sockfd == -1)
-  {
-    printf("unable to open a socket\n");
     return -1;
-  }
+  
 
   int filefd = openFile();
   if(filefd == -1)
@@ -53,7 +51,7 @@ int main(int argc, char *argv[])
     close(sockfd);
     return -1;
   }
-  printf("print!\n");
+
   if(sendFileToSockect(sockfd,filefd,numberOfChars) == -1)
   {
     close(sockfd);
@@ -77,6 +75,11 @@ int openSocket()
   struct sockaddr_in peer_addr;
   socklen_t addrsize = sizeof(struct sockaddr_in );
   sockfd = socket(AF_INET, SOCK_STREAM, 0);
+  if(sockfd == -1)
+  {
+    printf("Unable to open a socket\n");
+    return -1;
+  }
 
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_port = htons(PORT_num); // Note: htons for endiannes
@@ -84,7 +87,7 @@ int openSocket()
 
   if( connect(sockfd, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0)
   {
-    printf("Error : Connect Failed. %s \n", strerror(errno));
+    printf("Connect to server failed. %s \n", strerror(errno));
     return -1;
   }
 
@@ -109,45 +112,79 @@ int sendFileToSockect(int sockfd, int filefd, off_t size)
   long counter = 0;
   char buf[BUFFER_SIZE];
 
-  while(size > 0) //while more bytes need to be processed
-  {
-    //reading from file
-    ssize_t len;
-    if(size<BUFFER_SIZE) //read the minimum between readingSize and bufferSize
-      len = read(filefd, buf, size);
-    else
-      len = read(filefd, buf, BUFFER_SIZE);
-
-    if(len < 0) //check that the read call succeeded 
-    {
-      printf("Error reading from input file: %s\n", strerror(errno));
+  if(writeAll(sockfd, &size, sizeof(off_t)) == -1)
       return -1;
-    }
-    printf("data - ");
-    for(int i=0;i<len;i++)
-      printf("%c",buf[i]);
+  
 
-    printf("\n");
+  while(size > 0) 
+  {
+    ssize_t len = size<BUFFER_SIZE? size:BUFFER_SIZE;
+
+    if(readAll(filefd, buf, len) == -1)
+      return -1;
+
+    if(writeAll(sockfd, buf, len) == -1)
+     return -1;
 
     size -= len;
-    char *bufPointer = buf;
-    //write to socket
-    while( len>0 )
-    {
-      ssize_t bytes_written = write(sockfd, bufPointer, len);
-      if( bytes_written <= 0 )
-      {
-        printf("Error reading from input file: %s\n", strerror(errno));
-        return -1;
-      }
-      len -= bytes_written;
-      bufPointer += bytes_written;
-    }
   }
   return 0;
 }
 
 int printResult(int sockfd)
 {
+  unsigned long result;
+
+  
+  if(readAll(sockfd, (void *)  &result, sizeof(unsigned long)) == -1)
+    return -1;
+  
+  printf("the number of printable chars is %lu\n", result);
+
   return 0;
+}
+
+int readAll(int file, void * buffer, size_t size)
+{
+  void *location = buffer;
+  ssize_t len;
+  if(size == 0)
+    return 1;
+  do
+  {
+    len = read(file, location, size); 
+    if(len == -1)
+    {
+      printf("len - %zu\n", len);
+      printf("Error reading from file: %s\n", strerror(errno));
+      return -1;  
+    }
+    else if(len == 0)
+      break;
+    size-=len;
+
+    location += len;
+  } while(size>0 || len == 0);
+  return 1;
+}
+
+int writeAll(int file, void * buffer, size_t size)
+{
+  void *location = buffer;
+  ssize_t len;
+  if(size == 0)
+    return 1;
+
+  do
+  {
+    len = write(file, location, size);
+    if(len <= 0)
+    {
+      printf("Error Writing to file: %s\n", strerror(errno));
+      return -1;  
+    }
+    size-=len;
+    location += len;
+  } while (size>0); 
+  return 1;
 }
