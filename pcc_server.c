@@ -40,8 +40,11 @@ int writeAll(int file, void * buffer, size_t size);
 
 statistics globalStat;
 pthread_mutex_t statLock;
+pthread_mutex_t threadCounterLock;
+pthread_cond_t noThreadCond;
 
 bool stillRunning = true;
+int threadCounter = 0;
 
 int main(int argc, char *argv[])
 {
@@ -56,6 +59,17 @@ int main(int argc, char *argv[])
     return -1;
   }
 
+  if(pthread_mutex_init( &threadCounterLock, NULL ))
+  {
+    printf("Mutex init failed\n");
+    return -1;
+  }
+
+  if(pthread_cond_init (&noThreadCond, NULL))
+  {
+    printf("Condition varible init failed\n");
+    return -1;
+  }
 
   int sockfd = openSocket();
   if (sockfd < 0)
@@ -69,18 +83,33 @@ int main(int argc, char *argv[])
         if(errno == 4) //it's just a system call, maybe signal arrived!
           continue;
         printf("accept function failed - %s\n",strerror(errno));
-        break;
+        close(sockfd);
+        pthread_exit(NULL);
       }
+      
+      pthread_mutex_lock(&threadCounterLock);
+      threadCounter++;
+      pthread_mutex_unlock(&threadCounterLock);
+
       pthread_t thread;
       if(pthread_create(&thread, NULL, clientHandler, (void*) &connfd)<0)
       {
         printf("pthread create function failed - %s\n",strerror(errno));
-        break;
+        close(sockfd);
+        pthread_exit(NULL);
       }
      
   }
   close(sockfd);
+
+  pthread_mutex_lock(&threadCounterLock);
+  if(threadCounter > 0)
+    pthread_cond_wait(&noThreadCond, &threadCounterLock);
+  pthread_mutex_unlock(&threadCounterLock);
+
   pthread_mutex_destroy(&statLock);
+  pthread_mutex_destroy(&threadCounterLock);
+  pthread_cond_destroy(&noThreadCond);
   
   printStat(globalStat);
   pthread_exit(NULL);
@@ -129,8 +158,8 @@ void updateGlobalStatistics(statistics stat)
 
 void printStat(statistics stat)
 {
-  printf("Statistics:\n");
-  printf("Processed - %lu characters, %lu from them are readable\n", stat.counted, stat.printable);
+  printf("\nStatistics:\n");
+  printf("Processed - %lu characters, %lu from them are printable\n", stat.counted, stat.printable);
   for(int i=0;i<NUM_OF_PRINTABLE_CHARS;i++)
     if(stat.printableArray[i] > 0)
       printf("%c : %lu\n",i+32, stat.printableArray[i]);
@@ -182,7 +211,6 @@ void* clientHandler(void *connfd_ptr)
     return 0;
   }
 
-  printf("charToRead - %lu\n",charToRead);
   while(charToRead > 0)
   {
     int len = charToRead<BUFFER_SIZE? charToRead:BUFFER_SIZE; 
@@ -202,6 +230,12 @@ void* clientHandler(void *connfd_ptr)
   close(connfd);
 
   updateGlobalStatistics(localStat);
+
+  pthread_mutex_lock(&threadCounterLock);
+  threadCounter--;
+  if(threadCounter == 0)
+    pthread_cond_signal(&noThreadCond);
+  pthread_mutex_unlock(&threadCounterLock);
   return 0;
 }
 
