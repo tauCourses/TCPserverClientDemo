@@ -79,9 +79,9 @@ int main(int argc, char *argv[])
       }
      
   }
-
-  pthread_mutex_destroy(&statLock);
   close(sockfd);
+  pthread_mutex_destroy(&statLock);
+  
   printStat(globalStat);
 }
 
@@ -185,6 +185,7 @@ void* clientHandler(void *connfd_ptr)
   while(charToRead > 0)
   {
     int len = charToRead<BUFFER_SIZE? charToRead:BUFFER_SIZE; 
+    printf("len - %d",len);
     if(processData(connfd,len, &localStat) == -1)
     {
       close(connfd);
@@ -192,7 +193,7 @@ void* clientHandler(void *connfd_ptr)
     }
     charToRead -= len;
   }
-
+  printStat(localStat);
   if(writeAll(connfd, &localStat.printable, sizeof(unsigned long)) == -1)
   {
     close(connfd);
@@ -206,27 +207,27 @@ void* clientHandler(void *connfd_ptr)
 
 int processData(int connfd, int size, statistics *stat)
 {
-  int printable = 0;
   if(size > BUFFER_SIZE)
     return -1;
   char buf[BUFFER_SIZE];
   if(readAll(connfd, buf, size) == -1)
       return -1;
 
-  pthread_mutex_lock(&statLock);
+  printf("  size  - %d, stat - %lu\n",size, stat->counted);
+   
   for(int i=0;i<size;i++)
   {
     stat->counted++;
     if(buf[i]>=32 && buf[i]<=126) //check char is printable
     {
       stat->printable++;
-      stat->printableArray[buf[i]-32]++;
-      printable++;
+    //  stat->printableArray[buf[i]-32]++;
     }
   }
-  pthread_mutex_unlock(&statLock);
 
-  return printable;
+  printf("  size  - %d, stat - %lu\n",size, stat->counted);
+
+  return 0;
 }
 
 int readAll(int file, void * buffer, size_t size)
