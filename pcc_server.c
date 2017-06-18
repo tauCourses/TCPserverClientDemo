@@ -17,7 +17,7 @@
 #include <signal.h>
 
 #define BUFFER_SIZE 1024
-#define PORT_num 2233
+#define PORT_NUM 2233
 #define NUM_OF_PRINTABLE_CHARS 95
 #define NUM_OF_THREADS 10
 
@@ -51,23 +51,25 @@ int main(int argc, char *argv[])
   if(setSignalHandler() == -1)
     return -1;
   
-  initStat(&globalStat);
+  initStat(&globalStat); //not in a mutex because there is only one thread here!
 
-  if(pthread_mutex_init( &statLock, NULL ))
+  int lock_val = pthread_mutex_init( &statLock, NULL );
+  if(lock_val != 0)
   {
-    printf("Mutex init failed\n");
+    printf("Mutex init failed - %s\n", strerror(lock_val));
+    return -1;
+  }
+  lock_val = pthread_mutex_init( &threadCounterLock, NULL );
+  if(lock_val!=0)
+  {
+    printf("Mutex init failed - %s\n", strerror(lock_val));
     return -1;
   }
 
-  if(pthread_mutex_init( &threadCounterLock, NULL ))
+  lock_val = pthread_cond_init (&noThreadCond, NULL);
+  if(lock_val!=0)
   {
-    printf("Mutex init failed\n");
-    return -1;
-  }
-
-  if(pthread_cond_init (&noThreadCond, NULL))
-  {
-    printf("Condition varible init failed\n");
+    printf("Condition varible init failed - %s\n", strerror(lock_val));
     return -1;
   }
 
@@ -80,16 +82,28 @@ int main(int argc, char *argv[])
       int connfd = accept(sockfd, (struct sockaddr*) NULL, NULL); 
       if(connfd == -1)
       {
-        if(errno == 4) //it's just a system call, maybe signal arrived!
+        if(errno == EINTR) //it's just a system call, maybe signal arrived!
           continue;
         printf("accept function failed - %s\n",strerror(errno));
         close(sockfd);
         pthread_exit(NULL);
       }
       
-      pthread_mutex_lock(&threadCounterLock);
-      threadCounter++;
-      pthread_mutex_unlock(&threadCounterLock);
+      lock_val = pthread_mutex_lock(&threadCounterLock);
+      if( lock_val != 0 )
+      {
+        printf("mutex lock falied - %s\n", strerror( lock_val ) );
+        pthread_exit(NULL);
+      }
+      
+        threadCounter++;
+      
+      lock_val = pthread_mutex_unlock(&threadCounterLock);
+      if( lock_val != 0 )
+      {
+        printf("mutex lock falied - %s\n", strerror( lock_val ) );
+        pthread_exit(NULL);
+      }
 
       pthread_t thread;
       if(pthread_create(&thread, NULL, clientHandler, (void*) &connfd)<0)
@@ -101,11 +115,21 @@ int main(int argc, char *argv[])
      
   }
   close(sockfd);
-
-  pthread_mutex_lock(&threadCounterLock);
-  if(threadCounter > 0)
-    pthread_cond_wait(&noThreadCond, &threadCounterLock);
-  pthread_mutex_unlock(&threadCounterLock);
+  lock_val = pthread_mutex_lock(&threadCounterLock);
+  if( lock_val != 0 )
+  {
+    printf("mutex lock falied - %s\n", strerror( lock_val ) );
+    pthread_exit(NULL);
+  }
+    while(threadCounter > 0)
+      pthread_cond_wait(&noThreadCond, &threadCounterLock);
+  
+  lock_val = pthread_mutex_unlock(&threadCounterLock);
+  if( lock_val != 0 )
+  {
+    printf("mutex unlock falied - %s\n", strerror( lock_val ) );
+    pthread_exit(NULL);
+  }
 
   pthread_mutex_destroy(&statLock);
   pthread_mutex_destroy(&threadCounterLock);
@@ -145,15 +169,25 @@ void initStat(statistics *stat)
 }
 
 void updateGlobalStatistics(statistics stat)
-{
-  pthread_mutex_lock(&statLock);
-  
+{ 
+  int lock_val = pthread_mutex_lock(&statLock);
+  if( lock_val != 0 )
+  {
+    printf("mutex lock falied - %s\n", strerror( lock_val ) );
+    pthread_exit(NULL);
+  }
+
   globalStat.counted += stat.counted;  
   globalStat.printable += stat.printable;
   for(int i=0;i<NUM_OF_PRINTABLE_CHARS;i++)
     globalStat.printableArray[i] += stat.printableArray[i];
 
-  pthread_mutex_unlock(&statLock);
+  lock_val = pthread_mutex_unlock(&statLock);
+  if( lock_val != 0 )
+  {
+    printf("mutex unlock falied - %s\n", strerror( lock_val ) );
+    pthread_exit(NULL);
+  }
 }
 
 void printStat(statistics stat)
@@ -179,7 +213,7 @@ int openSocket()
   struct sockaddr_in serv_addr; 
   serv_addr.sin_family = AF_INET;
   serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-  serv_addr.sin_port = htons(PORT_num); 
+  serv_addr.sin_port = htons(PORT_NUM); 
 
   if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) != 0)
   {
@@ -231,11 +265,24 @@ void* clientHandler(void *connfd_ptr)
 
   updateGlobalStatistics(localStat);
 
-  pthread_mutex_lock(&threadCounterLock);
-  threadCounter--;
-  if(threadCounter == 0)
-    pthread_cond_signal(&noThreadCond);
-  pthread_mutex_unlock(&threadCounterLock);
+  int lock_val = pthread_mutex_lock(&threadCounterLock);
+  if( lock_val != 0 )
+  {
+    printf("mutex lock falied - %s\n", strerror( lock_val ) );
+    pthread_exit(NULL);
+  }
+
+    threadCounter--;
+    if(threadCounter == 0)
+      pthread_cond_signal(&noThreadCond);
+
+  lock_val = pthread_mutex_unlock(&threadCounterLock);
+  if(lock_val != 0)
+  {
+    printf("mutex unlock falied - %s\n", strerror( lock_val ) );
+    pthread_exit(NULL);
+  }
+
   return 0;
 }
 
